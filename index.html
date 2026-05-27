@@ -243,10 +243,18 @@ let syncT=null;
 function syncCloud(){
   clearTimeout(syncT);
   syncT=setTimeout(async()=>{
-    await npWrite({players:S.players,matches:S.matches,current:S.match||null});
+    await npWrite({players:S.players,matches:S.matches,current:S.match||null,
+      seasons:S.seasons,seasonName:S.seasonName});
     S.lastSync=new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
     const el=document.getElementById('sync-lbl');if(el)el.textContent='📡 '+S.lastSync;
   },1500);
+}
+
+/* Scrittura pubblica senza segreto — usata dai membri per auto-convocazione.
+   Funziona con Firebase in modalità test (30gg) o con regole .write:true sul path. */
+async function npWritePublic(data){
+  if(!FB_URL)return;
+  try{await fetch(`${FB_URL}${FB_PATH}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});}catch(e){}
 }
 
 /* ═══════════════════════════════════════
@@ -296,7 +304,12 @@ const SAMPLE=[
 let S={tab:'home',players:[],matches:[],match:null,
   editP:null,pRatings:{},pScore:{a:0,b:0},pMvp:'',
   loading:'',pFilter:'',swapSel:null,editTeams:false,
-  editingMatch:null,captainMode:false,showPinModal:false,lastSync:null};
+  editingMatch:null,captainMode:false,showPinModal:false,lastSync:null,
+  myPlayerId:'',      /* id giocatore scelto dal membro per auto-convocazione */
+  seasons:[],         /* stagioni archiviate */
+  seasonName:'',      /* nome stagione corrente es. "2024-25" */
+  showSeasonDetail:null /* stagione aperta nell'archivio */
+};
 
 /* ═══════════════════════════════════════
    STORAGE
@@ -309,24 +322,29 @@ function saveCm(){S.match?localStorage.setItem('ff_cm',JSON.stringify(S.match)):
    L'app si apre immediatamente senza aspettare la rete. */
 function load(){
   S.captainMode=localStorage.getItem('ff_captain')==='true';
+  S.myPlayerId=localStorage.getItem('ff_my_player')||'';
   const pl=localStorage.getItem('ff_pl');
   S.players=pl?JSON.parse(pl):SAMPLE.slice();
   if(!pl)savePl();
   const ms=localStorage.getItem('ff_ms');if(ms)S.matches=JSON.parse(ms);
   const cm=localStorage.getItem('ff_cm');if(cm)S.match=JSON.parse(cm);
+  const se=localStorage.getItem('ff_seasons');if(se)S.seasons=JSON.parse(se);
+  S.seasonName=localStorage.getItem('ff_season_name')||new Date().getFullYear().toString();
 }
 
 /* Aggiornamento cloud in BACKGROUND — chiamato dopo render() */
 async function cloudRefresh(){
   if(!FB_URL)return;
-  /* Il capitano con FB_SEC scrive lui i dati — non sovrascrivere con il cloud.
-     Solo i membri (senza segreto) aggiornano dal cloud. */
   if(S.captainMode&&FB_SEC)return;
   const cloud=await npRead();
   if(cloud&&cloud.players&&cloud.players.length>0){
     S.players=cloud.players;S.matches=cloud.matches||[];S.match=cloud.current||null;
+    if(cloud.seasons)S.seasons=cloud.seasons;
+    if(cloud.seasonName)S.seasonName=cloud.seasonName;
     localStorage.setItem('ff_pl',JSON.stringify(S.players));
     localStorage.setItem('ff_ms',JSON.stringify(S.matches));
+    localStorage.setItem('ff_seasons',JSON.stringify(S.seasons));
+    localStorage.setItem('ff_season_name',S.seasonName);
     S.match?localStorage.setItem('ff_cm',JSON.stringify(S.match)):localStorage.removeItem('ff_cm');
     S.lastSync=new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
     render();
@@ -368,6 +386,89 @@ function matchScorers(m){
       const team=m.teamA?.includes(id)?'⚪':'⚫';
       return `${team} ${p.name}${r.goals>1?` ×${r.goals}`:''}`;
     }).filter(Boolean);
+}
+
+/* ─── AUTO-CONVOCAZIONE ─────────────────────────────────────── */
+
+/* Membro sceglie il proprio nome */
+function setMyPlayer(){
+  const sel=document.getElementById('sel-my-player');
+  if(!sel||!sel.value){alert('Seleziona il tuo nome');return;}
+  S.myPlayerId=sel.value;
+  localStorage.setItem('ff_my_player',S.myPlayerId);
+  render();
+}
+
+/* Membro segna la propria presenza — scrive sul cloud anche senza essere capitano */
+async function selfAttend(status){
+  if(!S.match||S.match.phase!=='attendance'||!S.myPlayerId)return;
+  S.match.players[S.myPlayerId]=status;
+  localStorage.setItem('ff_cm',JSON.stringify(S.match));
+  /* Scrivi su cloud (funziona in Firebase test mode o con regole pubbliche) */
+  await npWritePublic({players:S.players,matches:S.matches,current:S.match,
+    seasons:S.seasons,seasonName:S.seasonName});
+  render();
+}
+
+/* ─── WHATSAPP SHARE ────────────────────────────────────────── */
+
+function shareWhatsApp(){
+  if(!S.match||!S.match.teamA?.length)return;
+  const tA=S.players.filter(p=>S.match.teamA.includes(p.id));
+  const tB=S.players.filter(p=>S.match.teamB.includes(p.id));
+  const fmA=formLabel(tA),fmB=formLabel(tB);
+  const link=localStorage.getItem('ff_shareurl')||location.href;
+  const gruppoA=ROLES.map(r=>{const ps=tA.filter(p=>p.role===r);return ps.length?`${RICON[r]} ${ps.map(p=>p.name).join(', ')}`:null;}).filter(Boolean).join('\n');
+  const gruppoB=ROLES.map(r=>{const ps=tB.filter(p=>p.role===r);return ps.length?`${RICON[r]} ${ps.map(p=>p.name).join(', ')}`:null;}).filter(Boolean).join('\n');
+  const msg=
+    `⚽ *FOOTBALL FRIDAY — ${S.match.date}*\n\n`+
+    `⚪ *BIANCHI* [${fmA}]\n${gruppoA}\n\n`+
+    `⚫ *NERI* [${fmB}]\n${gruppoB}\n\n`+
+    `📺 Vedi il campo: ${link}`;
+  if(navigator.share){
+    navigator.share({text:msg}).catch(()=>copyToClipboard(msg));
+  }else{
+    copyToClipboard(msg);
+  }
+}
+
+function copyToClipboard(text){
+  navigator.clipboard?.writeText(text)
+    .then(()=>alert('✅ Messaggio copiato! Incollalo su WhatsApp.'))
+    .catch(()=>{
+      /* fallback per Safari */
+      const ta=document.createElement('textarea');
+      ta.value=text;document.body.appendChild(ta);ta.select();
+      document.execCommand('copy');document.body.removeChild(ta);
+      alert('✅ Messaggio copiato! Incollalo su WhatsApp.');
+    });
+}
+
+/* ─── STAGIONI ──────────────────────────────────────────────── */
+
+function startNewSeason(){
+  const name=prompt('Nome da dare alla stagione che si chiude (es. 2024-25):',S.seasonName)||S.seasonName;
+  if(!confirm(`Archiviare la stagione "${name}" e iniziarne una nuova?\n\nLe statistiche attuali vengono conservate nell'archivio.`))return;
+  /* Archivia stagione corrente */
+  S.seasons.unshift({
+    name,
+    date:new Date().toLocaleDateString('it-IT'),
+    matches:[...S.matches],
+    players:S.players.map(p=>({...p})),
+    totalGoals:S.players.reduce((s,p)=>s+p.GF,0),
+    topScorer:[...S.players].sort((a,b)=>b.GF-a.GF)[0]?.name||'',
+    topWins:[...S.players].sort((a,b)=>b.V-a.V)[0]?.name||'',
+    topPresenze:[...S.players].sort((a,b)=>b.G-a.G)[0]?.name||'',
+  });
+  /* Reset statistiche per nuova stagione */
+  S.players=S.players.map(p=>({...p,G:0,V:0,P:0,S:0,GF:0,GS:0}));
+  S.matches=[];S.match=null;
+  S.seasonName=new Date().getFullYear().toString();
+  localStorage.setItem('ff_seasons',JSON.stringify(S.seasons));
+  localStorage.setItem('ff_season_name',S.seasonName);
+  savePl();saveMs();saveCm();
+  alert(`✅ Stagione "${name}" archiviata! Nuova stagione ${S.seasonName} iniziata.`);
+  S.showPinModal=false;render();
 }
 
 /* ═══════════════════════════════════════
@@ -436,10 +537,14 @@ function modalPin(){return `<div class="ov" onclick="if(event.target===this){S.s
       <div style="font-size:40px;margin-bottom:8px">${S.captainMode?'👑':'🔐'}</div>
       <div style="font-weight:700;font-size:17px;margin-bottom:4px">${S.captainMode?'Modalità Capitano Attiva':'Accesso Capitano'}</div>
       <div style="font-size:13px;color:#9ca3af;margin-bottom:20px">${S.captainMode?'Hai accesso completo a tutte le funzioni.':'Inserisci il PIN per gestire l\'app'}</div>
-      ${S.captainMode?`<div style="border:1px dashed #dc2626;border-radius:12px;padding:12px;text-align:center;margin-bottom:16px">
-        <div style="font-size:11px;color:#6b7280;margin-bottom:6px">🏆 Fine stagione</div>
-        <div style="font-size:12px;color:#9ca3af;margin-bottom:10px">Azzera tutte le statistiche e lo storico</div>
-        <button onclick="resetSeason()" class="btn br bsm">🔄 Nuova Stagione</button>
+      ${S.captainMode?`<div style="border:1px dashed #16a34a;border-radius:12px;padding:12px;text-align:center;margin-bottom:12px">
+        <div style="font-size:11px;color:#6b7280;margin-bottom:4px">🏆 Fine stagione</div>
+        <div style="font-size:12px;color:#9ca3af;margin-bottom:10px">Archivia la stagione attuale e inizia da zero — le statistiche restano nell'archivio</div>
+        <button onclick="startNewSeason()" class="btn bg bsm">📅 Nuova Stagione</button>
+      </div>`:''}
+      ${S.captainMode?`<div style="border:1px dashed #dc2626;border-radius:12px;padding:10px;text-align:center;margin-bottom:12px">
+        <div style="font-size:11px;color:#6b7280;margin-bottom:4px">⚠️ Reset totale</div>
+        <button onclick="resetSeason()" class="btn br bsm" style="font-size:11px">🗑️ Cancella tutto</button>
       </div>`:''}
       ${!S.captainMode?`
         <input id="pin-inp" type="password" inputmode="numeric" pattern="[0-9]*" class="inp" style="text-align:center;font-size:28px;letter-spacing:10px;margin-bottom:14px" placeholder="••••••" maxlength="8"/>
@@ -484,7 +589,7 @@ function pgHome(){
   const ts=[...S.players].sort((a,b)=>b.GF-a.GF)[0];
   const tw=[...S.players].sort((a,b)=>b.V-a.V)[0];
   const ta=[...S.players].sort((a,b)=>b.G-a.G)[0];
-  const tmp=[...S.players].filter(p=>p.G>=10).sort((a,b)=>calcMediaP(b)-calcMediaP(a))[0];
+  const tmp=[...S.players].filter(p=>p.G>=3).sort((a,b)=>calcMediaP(b)-calcMediaP(a))[0];
   const lm=S.matches[0];const ph=S.match?.phase;
   const topS=[...S.players].sort((a,b)=>b.GF-a.GF).filter(p=>p.GF>0).slice(0,5);
   const lmSc=lm?matchScorers(lm):[];
@@ -505,7 +610,33 @@ function pgHome(){
       <button class="btn bg bsm" onclick="go('convoca')">Gestisci</button>
       ${ph!=='attendance'?`<button class="btn bgr bsm" onclick="go('partita')">⚽ Partita</button>`:''}
       ${ph==='teams'&&S.match.teamA?.length?`<button class="btn bgr bsm" onclick="go('stadio')">📺 Stadio</button>`:''}
-    </div>`:`<button class="btn bgr bsm" onclick="go('stadio')">📺 Vedi campo</button>`}
+    </div>`:ph==='attendance'?`
+      ${(()=>{
+        /* AUTO-CONVOCAZIONE per i membri */
+        if(!S.myPlayerId){
+          /* Il membro non ha ancora scelto il proprio nome */
+          return `<div style="margin-bottom:10px">
+            <div style="font-size:12px;color:#9ca3af;margin-bottom:8px">👤 Chi sei? Seleziona il tuo nome:</div>
+            <select id="sel-my-player" class="inp" style="margin-bottom:8px;font-size:13px">
+              <option value="">-- Seleziona --</option>
+              ${S.players.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}
+            </select>
+            <button onclick="setMyPlayer()" class="btn bg bfw">✓ Conferma</button>
+          </div>`;
+        }
+        const myP=S.players.find(p=>p.id===S.myPlayerId);
+        const myStatus=S.match.players[S.myPlayerId]||'pending';
+        const statusLabel=myStatus==='confirmed'?'✅ Sei presente':myStatus==='absent'?'❌ Non puoi venire':'❓ Non hai ancora risposto';
+        return `<div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:8px">👤 ${myP?.name||'?'} — ${statusLabel}</div>
+          <div style="display:flex;gap:8px">
+            <button onclick="selfAttend('confirmed')" class="btn bfw" style="background:${myStatus==='confirmed'?'#16a34a':'#374151'};padding:10px">✅ Sono presente</button>
+            <button onclick="selfAttend('absent')" class="btn bfw" style="background:${myStatus==='absent'?'#dc2626':'#374151'};padding:10px">❌ Non posso</button>
+          </div>
+          <button onclick="S.myPlayerId='';localStorage.removeItem('ff_my_player');render()" style="margin-top:6px;background:none;border:none;color:#6b7280;font-size:11px;cursor:pointer">Non sei ${myP?.name}? Cambia nome</button>
+        </div>`;
+      })()}
+    `:`<button class="btn bgr bsm" onclick="go('stadio')">📺 Vedi campo</button>`}
   </div>`:`<div class="card" style="border:1px dashed #374151;text-align:center">
     <div class="muted" style="margin-bottom:${S.captainMode?'12px':'0'}">Nessuna partita programmata</div>
     ${S.captainMode?`<button class="btn bg" onclick="go('convoca')">📋 Convoca partita</button>`:''}
@@ -881,9 +1012,10 @@ function pgTeams(){
   ${!S.editTeams?`<div class="g2">${teamCard(tA,'⚪ '+BIANCHI,'#e5e7eb','#1c2030')}${teamCard(tB,'⚫ '+NERI,'#6b7280','#0d1117')}</div>`:''}
   ${S.match.teamExpl&&!S.editTeams?`<div class="anti"><div style="font-size:11px;font-weight:700;color:#fbbf24;margin-bottom:6px">🛡️ ANTI-POLEMICA</div>
     <div style="font-size:12px;color:#d1d5db;line-height:1.6">${S.match.teamExpl}</div></div>`:''}
-  ${!S.editTeams?`<div style="display:flex;gap:8px">
+  ${!S.editTeams?`<div style="display:flex;gap:8px;flex-wrap:wrap">
     <button class="btn bg bfw" onclick="startResult()" style="padding:12px">✅ Inizia la partita!</button>
     <button class="btn bgr bsm" onclick="go('stadio')">📺</button>
+    <button onclick="shareWhatsApp()" style="background:#25D366;border:none;border-radius:8px;padding:8px 14px;color:white;font-size:14px;font-weight:600;cursor:pointer">📱 WhatsApp</button>
   </div>`:''}
 </div>`;}
 
@@ -1152,7 +1284,7 @@ function pgGiornale(){
   const topS=[...S.players].sort((a,b)=>b.GF-a.GF).filter(p=>p.GF>0);
   const topV=[...S.players].sort((a,b)=>b.V-a.V).filter(p=>p.V>0);
   const topG=[...S.players].sort((a,b)=>b.G-a.G).filter(p=>p.G>0);
-  const mpPlayers=[...S.players].filter(p=>p.G>=10).sort((a,b)=>calcMediaP(b)-calcMediaP(a));
+  const mpPlayers=[...S.players].filter(p=>p.G>=3).sort((a,b)=>calcMediaP(b)-calcMediaP(a));
   const lm=S.matches[0];const tg=S.players.reduce((s,p)=>s+p.GF,0);
   const today=new Date().toLocaleDateString('it-IT',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
   return `<div class="gz-bg">
@@ -1212,7 +1344,7 @@ function pgGiornale(){
     </div>
     <div style="margin-bottom:16px;border-top:3px double #E30613;padding-top:12px">
       <div class="gz-head gz-red" style="font-size:clamp(15px,5vw,20px);border-bottom:3px solid #E30613;padding-bottom:4px;margin-bottom:8px">📊 CLASSIFICA MEDIA PUNTI</div>
-      <div style="font-size:10px;color:#888;font-family:-apple-system,sans-serif;margin-bottom:6px">Formula: (V×3 + P) / Presenze • Min. 10 partite</div>
+      <div style="font-size:10px;color:#888;font-family:-apple-system,sans-serif;margin-bottom:6px">Formula: (V×3 + P) / Presenze • Min. 3 partite</div>
       ${mpPlayers.length>0?`<table style="width:100%;border-collapse:collapse;font-family:-apple-system,sans-serif">
         <thead><tr style="background:#E30613;color:white;font-size:10px;letter-spacing:1px">
           <th style="padding:5px 4px;text-align:center;width:28px">#</th><th style="padding:5px 8px;text-align:left">GIOCATORE</th>
@@ -1232,7 +1364,7 @@ function pgGiornale(){
             <td style="padding:5px 4px;text-align:center;font-size:12px;color:#dc2626">${p.S}</td>
             <td style="padding:5px 4px;text-align:center;font-weight:700;font-size:${g?17:14}px;color:${g?'#E30613':'#1a1a1a'}">${mp.toFixed(3)}</td>
           </tr>`;}).join('')}</tbody>
-      </table>`:`<div style="padding:.5rem 0;text-align:center;color:#999;font-size:13px;font-style:italic">Min. 10 partite per entrare in classifica</div>`}
+      </table>`:`<div style="padding:.5rem 0;text-align:center;color:#999;font-size:13px;font-style:italic">Min. 3 partite per entrare in classifica</div>`}
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;border-top:3px double #E30613;padding-top:12px;margin-bottom:16px">
       <div>
@@ -1261,7 +1393,33 @@ function pgGiornale(){
       </div>`;}).join('')}
     </div>
   </div>
-  <div style="background:#E30613;color:rgba(255,255,255,.7);text-align:center;padding:10px;font-size:9px;letter-spacing:2px;margin-top:20px;font-family:-apple-system,sans-serif;font-weight:600">
+  ${S.seasons.length>0?`<div style="padding:12px 16px;background:#F8DDD6">
+    <div class="gz-head" style="font-size:16px;color:#1a1a1a;margin-bottom:12px;border-bottom:3px solid #E30613;padding-bottom:4px">📅 ARCHIVIO STAGIONI</div>
+    ${S.seasons.map((s,i)=>`<div style="background:white;border:1px solid #d4c9b5;border-radius:8px;padding:12px;margin-bottom:8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="S.showSeasonDetail=S.showSeasonDetail===${i}?null:${i};document.getElementById('content').innerHTML=pgGiornale()">
+        <div>
+          <div style="font-weight:700;font-size:14px;color:#1a1a1a">🏆 ${s.name}</div>
+          <div style="font-size:11px;color:#888;margin-top:2px">${s.date} · ${s.matches?.length||0} partite · ${s.totalGoals||0} gol</div>
+        </div>
+        <span style="font-size:16px;color:#E30613">${S.showSeasonDetail===i?'▲':'▼'}</span>
+      </div>
+      ${S.showSeasonDetail===i?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #eee">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;font-family:-apple-system,sans-serif;margin-bottom:8px">
+          ${s.topScorer?`<div><span style="color:#888">⚽ Capocannoniere</span><br><b>${s.topScorer}</b></div>`:''}
+          ${s.topWins?`<div><span style="color:#888">🏆 Più vittorie</span><br><b>${s.topWins}</b></div>`:''}
+          ${s.topPresenze?`<div><span style="color:#888">📅 Più presenze</span><br><b>${s.topPresenze}</b></div>`:''}
+          <div><span style="color:#888">📊 Partite</span><br><b>${s.matches?.length||0}</b></div>
+        </div>
+        ${s.players?.length>0?`<div style="font-size:11px;color:#888;margin-bottom:4px;font-weight:700;text-transform:uppercase;letter-spacing:1px">Marcatori</div>
+          ${[...s.players].sort((a,b)=>b.GF-a.GF).filter(p=>p.GF>0).slice(0,5).map((p,j)=>`
+            <div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px dotted #eee;font-family:-apple-system,sans-serif">
+              <span>${j===0?'🥇':j===1?'🥈':j===2?'🥉':`${j+1}.`} ${p.name}</span>
+              <span style="font-weight:700;color:#E30613">${p.GF} ⚽</span>
+            </div>`).join('')}`:''}
+      </div>`:''}
+    </div>`).join('')}
+  </div>`:''}
+  <div style="background:#E30613;color:rgba(255,255,255,.7);text-align:center;padding:10px;font-size:9px;letter-spacing:2px;margin-top:8px;font-family:-apple-system,sans-serif;font-weight:600">
     LA GAZZETTA DEL VENERDÌ • TUTTI I DIRITTI NON RISERVATI • AI POWERED 🤖
   </div>
 </div>`;}
