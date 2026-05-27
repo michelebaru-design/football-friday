@@ -319,6 +319,9 @@ function load(){
 /* Aggiornamento cloud in BACKGROUND — chiamato dopo render() */
 async function cloudRefresh(){
   if(!FB_URL)return;
+  /* Il capitano con FB_SEC scrive lui i dati — non sovrascrivere con il cloud.
+     Solo i membri (senza segreto) aggiornano dal cloud. */
+  if(S.captainMode&&FB_SEC)return;
   const cloud=await npRead();
   if(cloud&&cloud.players&&cloud.players.length>0){
     S.players=cloud.players;S.matches=cloud.matches||[];S.match=cloud.current||null;
@@ -456,8 +459,20 @@ function modalPin(){return `<div class="ov" onclick="if(event.target===this){S.s
 
 function checkPin(){
   const v=(document.getElementById('pin-inp')||{}).value||'';
-  if(v===CAPTAIN_PIN){S.captainMode=true;localStorage.setItem('ff_captain','true');S.showPinModal=false;syncCloud();render();}
-  else{const el=document.getElementById('pin-inp');if(el){el.style.borderColor='#dc2626';el.value='';el.placeholder='PIN errato!';}setTimeout(()=>{if(el){el.style.borderColor='#374151';el.placeholder='••••••';}},1500);}
+  if(v===CAPTAIN_PIN){
+    S.captainMode=true;localStorage.setItem('ff_captain','true');S.showPinModal=false;
+    /* Se questo dispositivo ha FB_URL ma non FB_SEC (es. apertura dal link gruppo),
+       chiedi il segreto Firebase per poter salvare le modifiche */
+    if(FB_URL&&!FB_SEC){
+      const sec=prompt('📱 Primo accesso capitano su questo dispositivo.\n\nInserisci il Segreto Database Firebase\n(lo trovi su console.firebase.google.com → Impostazioni → Account di servizio → Segreti database):');
+      if(sec&&sec.trim()){FB_SEC=sec.trim();localStorage.setItem('ff_fb_sec',FB_SEC);}
+    }
+    syncCloud();render();
+  }else{
+    const el=document.getElementById('pin-inp');
+    if(el){el.style.borderColor='#dc2626';el.value='';el.placeholder='PIN errato!';}
+    setTimeout(()=>{if(el){el.style.borderColor='#374151';el.placeholder='••••••';}},1500);
+  }
 }
 function exitCaptain(){S.captainMode=false;localStorage.removeItem('ff_captain');S.showPinModal=false;if(!['home','stadio','giornale'].includes(S.tab))S.tab='home';render();}
 
