@@ -1331,20 +1331,21 @@ function resetSeason(){
       <div style="font-size:22px;font-weight:800;color:#4ade80">Football Friday</div>
       <div style="color:#6b7280;font-size:13px">Caricamento dati...</div>
     </div>`;
-  await load();
-  render();
-
-  /* AUTO-REFRESH per i membri (non capitano):
-     - Quando riaprono l'app dal background → aggiorna subito
-     - Ogni 60 secondi mentre l'app è aperta
-     Il capitano non ha bisogno di auto-refresh (scrive lui). */
-  if(!S.captainMode){
-    document.addEventListener('visibilitychange',()=>{
-      if(!document.hidden&&!S.captainMode)refreshData();
-    });
-    setInterval(()=>{
-      if(!document.hidden&&!S.captainMode)refreshData();
-    },60000);
+  try{
+    await load();
+    render();
+    if(!S.captainMode){
+      document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshData();});
+      setInterval(()=>{if(!document.hidden&&!S.captainMode)refreshData();},60000);
+    }
+  }catch(err){
+    document.getElementById('root').innerHTML=`
+      <div style="padding:20px;background:#030712;color:white;font-family:monospace;min-height:100vh">
+        <div style="color:#f87171;font-size:18px;margin-bottom:12px">⚠️ Errore avvio</div>
+        <div style="color:#fbbf24;margin-bottom:8px">${err.message}</div>
+        <pre style="color:#9ca3af;font-size:11px;white-space:pre-wrap;overflow:auto">${err.stack||''}</pre>
+        <button onclick="location.reload()" style="margin-top:16px;padding:10px 20px;background:#16a34a;border:none;border-radius:8px;color:white;font-size:14px;cursor:pointer">🔄 Ricarica</button>
+      </div>`;
   }
 })();
 </script>
