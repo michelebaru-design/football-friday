@@ -589,7 +589,7 @@ function pgHome(){
   const ts=[...S.players].sort((a,b)=>b.GF-a.GF)[0];
   const tw=[...S.players].sort((a,b)=>b.V-a.V)[0];
   const ta=[...S.players].sort((a,b)=>b.G-a.G)[0];
-  const tmp=[...S.players].filter(p=>p.G>=3).sort((a,b)=>calcMediaP(b)-calcMediaP(a))[0];
+  const tmp=[...S.players].filter(p=>p.G>=10).sort((a,b)=>calcMediaP(b)-calcMediaP(a))[0];
   const lm=S.matches[0];const ph=S.match?.phase;
   const topS=[...S.players].sort((a,b)=>b.GF-a.GF).filter(p=>p.GF>0).slice(0,5);
   const lmSc=lm?matchScorers(lm):[];
@@ -1284,7 +1284,7 @@ function pgGiornale(){
   const topS=[...S.players].sort((a,b)=>b.GF-a.GF).filter(p=>p.GF>0);
   const topV=[...S.players].sort((a,b)=>b.V-a.V).filter(p=>p.V>0);
   const topG=[...S.players].sort((a,b)=>b.G-a.G).filter(p=>p.G>0);
-  const mpPlayers=[...S.players].filter(p=>p.G>=3).sort((a,b)=>calcMediaP(b)-calcMediaP(a));
+  const mpPlayers=[...S.players].filter(p=>p.G>=10).sort((a,b)=>calcMediaP(b)-calcMediaP(a));
   const lm=S.matches[0];const tg=S.players.reduce((s,p)=>s+p.GF,0);
   const today=new Date().toLocaleDateString('it-IT',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
   return `<div class="gz-bg">
@@ -1344,7 +1344,7 @@ function pgGiornale(){
     </div>
     <div style="margin-bottom:16px;border-top:3px double #E30613;padding-top:12px">
       <div class="gz-head gz-red" style="font-size:clamp(15px,5vw,20px);border-bottom:3px solid #E30613;padding-bottom:4px;margin-bottom:8px">📊 CLASSIFICA MEDIA PUNTI</div>
-      <div style="font-size:10px;color:#888;font-family:-apple-system,sans-serif;margin-bottom:6px">Formula: (V×3 + P) / Presenze • Min. 3 partite</div>
+      <div style="font-size:10px;color:#888;font-family:-apple-system,sans-serif;margin-bottom:6px">Formula: (V×3 + P) / Presenze • Min. 10 partite</div>
       ${mpPlayers.length>0?`<table style="width:100%;border-collapse:collapse;font-family:-apple-system,sans-serif">
         <thead><tr style="background:#E30613;color:white;font-size:10px;letter-spacing:1px">
           <th style="padding:5px 4px;text-align:center;width:28px">#</th><th style="padding:5px 8px;text-align:left">GIOCATORE</th>
@@ -1364,7 +1364,7 @@ function pgGiornale(){
             <td style="padding:5px 4px;text-align:center;font-size:12px;color:#dc2626">${p.S}</td>
             <td style="padding:5px 4px;text-align:center;font-weight:700;font-size:${g?17:14}px;color:${g?'#E30613':'#1a1a1a'}">${mp.toFixed(3)}</td>
           </tr>`;}).join('')}</tbody>
-      </table>`:`<div style="padding:.5rem 0;text-align:center;color:#999;font-size:13px;font-style:italic">Min. 3 partite per entrare in classifica</div>`}
+      </table>`:`<div style="padding:.5rem 0;text-align:center;color:#999;font-size:13px;font-style:italic">Min. 10 partite per entrare in classifica</div>`}
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;border-top:3px double #E30613;padding-top:12px;margin-bottom:16px">
       <div>
