@@ -520,7 +520,7 @@ function pgHome(){
     ${lmSc.length>0?`<div style="font-size:12px;color:#9ca3af;text-align:center;line-height:1.7">⚽ ${lmSc.join(' · ')}</div>`:''}
   </div>`:''}
   ${!S.captainMode?`<div style="margin-top:12px;display:flex;flex-direction:column;align-items:center;gap:8px">
-    ${NP_ID
+    ${FB_URL
       ?`<button id="btn-refresh" onclick="refreshData()" class="btn bg" style="font-size:14px;padding:12px 32px;min-width:200px">🔄 Aggiorna dati</button>
          <span style="font-size:11px;color:#6b7280">${S.lastSync?'📡 Ultimo sync: '+S.lastSync:'Tocca per scaricare gli ultimi dati'}</span>`
       :`<div class="card" style="text-align:center;border-color:#fbbf24">
@@ -557,7 +557,7 @@ async function refreshData(){
   }else{
     const errMsg=S._npErr?`❌ ${S._npErr}`:'❌ Nessun dato';
     if(btn){btn.innerHTML=errMsg;btn.disabled=false;}
-    setTimeout(()=>{if(!S.captainMode&&NP_ID)refreshData();},5000);
+    setTimeout(()=>{if(!S.captainMode&&FB_URL)refreshData();},5000);
   }
 }
 
