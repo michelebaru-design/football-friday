@@ -305,8 +305,20 @@ function savePl(){localStorage.setItem('ff_pl',JSON.stringify(S.players));if(S.c
 function saveMs(){localStorage.setItem('ff_ms',JSON.stringify(S.matches));if(S.captainMode)syncCloud();}
 function saveCm(){S.match?localStorage.setItem('ff_cm',JSON.stringify(S.match)):localStorage.removeItem('ff_cm');if(S.captainMode)syncCloud();}
 
-async function load(){
+/* load() è ora SINCRONO — legge solo localStorage/SAMPLE.
+   L'app si apre immediatamente senza aspettare la rete. */
+function load(){
   S.captainMode=localStorage.getItem('ff_captain')==='true';
+  const pl=localStorage.getItem('ff_pl');
+  S.players=pl?JSON.parse(pl):SAMPLE.slice();
+  if(!pl)savePl();
+  const ms=localStorage.getItem('ff_ms');if(ms)S.matches=JSON.parse(ms);
+  const cm=localStorage.getItem('ff_cm');if(cm)S.match=JSON.parse(cm);
+}
+
+/* Aggiornamento cloud in BACKGROUND — chiamato dopo render() */
+async function cloudRefresh(){
+  if(!FB_URL)return;
   const cloud=await npRead();
   if(cloud&&cloud.players&&cloud.players.length>0){
     S.players=cloud.players;S.matches=cloud.matches||[];S.match=cloud.current||null;
@@ -314,11 +326,7 @@ async function load(){
     localStorage.setItem('ff_ms',JSON.stringify(S.matches));
     S.match?localStorage.setItem('ff_cm',JSON.stringify(S.match)):localStorage.removeItem('ff_cm');
     S.lastSync=new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
-  }else{
-    const pl=localStorage.getItem('ff_pl');S.players=pl?JSON.parse(pl):SAMPLE.slice();if(!pl)savePl();
-    const ms=localStorage.getItem('ff_ms');if(ms)S.matches=JSON.parse(ms);
-    const cm=localStorage.getItem('ff_cm');if(cm)S.match=JSON.parse(cm);
-    if(S.captainMode)syncCloud();
+    render();
   }
 }
 
@@ -1332,8 +1340,9 @@ function resetSeason(){
       <div style="color:#6b7280;font-size:13px">Caricamento dati...</div>
     </div>`;
   try{
-    await load();
-    render();
+    load();   /* sincrono — istantaneo */
+    render(); /* app visibile subito */
+    cloudRefresh(); /* cloud in background, non blocca */
     if(!S.captainMode){
       document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshData();});
       setInterval(()=>{if(!document.hidden&&!S.captainMode)refreshData();},60000);
