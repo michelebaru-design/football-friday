@@ -187,7 +187,10 @@ const FB_PATH='/ff.json';
 async function npRead(){
   if(!FB_URL)return null;
   try{
-    const r=await fetch(`${FB_URL}${FB_PATH}?_=${Date.now()}`,{cache:'no-store'});
+    const ctrl=new AbortController();
+    const timer=setTimeout(()=>ctrl.abort(),5000);
+    const r=await fetch(`${FB_URL}${FB_PATH}?_=${Date.now()}`,{cache:'no-store',signal:ctrl.signal});
+    clearTimeout(timer);
     if(!r.ok){S._npErr=`HTTP ${r.status}`;return null;}
     const d=await r.json();S._npErr=null;
     return (d&&Array.isArray(d.players)&&d.players.length>0)?d:null;
