@@ -397,7 +397,7 @@ function matchScorers(m){
 /* Converte nome giocatore in nome file immagine
    es. "Matteo M." → "MatteoM.jpg"  |  "Cugino Tony" → "CuginoTony.jpg" */
 function playerPhoto(name){
-  return 'img/'+name.split(' ')
+  return name.split(' ')
     .map(w=>w.charAt(0).toUpperCase()+w.slice(1).replace(/\./g,''))
     .join('').replace(/\./g,'')+'.jpg';
 }
