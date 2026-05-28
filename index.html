@@ -593,7 +593,7 @@ function appShell(){
 </div>`;}
 
 function go(t){
-  const ok=S.captainMode?['home','rosa','nuovo','convoca','partita','stadio','giornale']:['home','rosa','stadio','giornale'];
+  const ok=S.captainMode?['home','rosa','nuovo','convoca','partita','stadio','giornale','figurine']:['home','rosa','stadio','giornale','figurine'];
   S.tab=ok.includes(t)?t:'home';S.editTeams=false;S.swapSel=null;render();
 }
 
