@@ -580,7 +580,7 @@ function appShell(){
       ${S.match?`<span class="bdg bdgg" style="margin-left:auto">${cc} ✓</span>`:'<span style="flex:1"></span>'}
       <button onclick="S.showPinModal=true;render()" style="background:none;border:none;font-size:20px;flex-shrink:0;padding:0 2px">${S.captainMode?'👑':'🔐'}</button>
     </header>
-    <div id="content">${(pages[S.tab]||pgHome)()}</div>
+    <div id="content">${(()=>{try{return(pages[S.tab]||pgHome)();}catch(e){return`<div style="padding:20px;color:#f87171;font-family:monospace;font-size:12px"><b>Errore pagina ${S.tab}:</b><br>${e.message}<br><br><pre style="white-space:pre-wrap;font-size:10px">${e.stack||''}</pre></div>`;}})()}</div>
     <nav id="mnav">
       ${tabs.map(t=>`<button class="nb${S.tab===t.id?' act':''}" onclick="go('${t.id}')">
         <span class="nb-i">${t.e}</span>${t.l}
