@@ -578,8 +578,8 @@ function cambiaGroqKey(){
   render();
 }
 
+function render(){document.getElementById('root').innerHTML=appShell();}
 
-function appShell(){
   const capTabs=[
     {id:'home',e:'🏠',l:'Home'},{id:'rosa',e:'👥',l:'Rosa'},{id:'nuovo',e:'➕',l:'Nuovo'},
     {id:'convoca',e:'📋',l:'Convoca'},{id:'partita',e:'⚽',l:'Partita'},
