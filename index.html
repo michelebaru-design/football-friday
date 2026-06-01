@@ -164,13 +164,7 @@ input[type=range]{accent-color:#16a34a;width:100%}
 /* ═══════════════════════════════════════
    🔑 CHIAVI
 ═══════════════════════════════════════ */
-/* ═══════════════════════════════════════
-   🔑 CHIAVI — salvate in localStorage (non nel codice)
-═══════════════════════════════════════ */
-function getGroqKey(){return localStorage.getItem('ff_groq_key')||'';}
-function setGroqKey(k){localStorage.setItem('ff_groq_key',k.trim());}
-// Compatibilità: GROQ_KEY usato nel resto del codice
-let GROQ_KEY=getGroqKey();
+const GROQ_KEY='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';
 const CAPTAIN_PIN='123456';
 const BIANCHI='Bianchi',NERI='Neri';
 
@@ -312,7 +306,7 @@ const SAMPLE=[
 let S={tab:'home',players:[],matches:[],match:null,
   editP:null,pRatings:{},pScore:{a:0,b:0},pMvp:'',
   loading:'',pFilter:'',swapSel:null,editTeams:false,
-  editingMatch:null,captainMode:false,showPinModal:false,lastSync:null,
+  editingMatch:null,editingScorers:null,captainMode:false,showPinModal:false,lastSync:null,
   myPlayerId:'',      /* id giocatore scelto dal membro per auto-convocazione */
   seasons:[],         /* stagioni archiviate */
   seasonName:'',      /* nome stagione corrente es. "2024-25" */
@@ -365,25 +359,11 @@ async function cloudRefresh(){
    AI (GROQ)
 ═══════════════════════════════════════ */
 async function ai(msg,sys){
-  GROQ_KEY=getGroqKey(); // rilegge sempre da localStorage
-  if(!GROQ_KEY){
-    const k=prompt('🔑 Inserisci la tua Groq API Key (console.groq.com):\n\nViene salvata solo sul tuo dispositivo.');
-    if(!k||!k.trim()){throw new Error('Chiave API non inserita');}
-    setGroqKey(k);GROQ_KEY=k.trim();
-  }
   const r=await fetch('https://api.groq.com/openai/v1/chat/completions',{method:'POST',
     headers:{'Content-Type':'application/json','Authorization':'Bearer '+GROQ_KEY},
     body:JSON.stringify({model:'llama-3.3-70b-versatile',max_tokens:1500,
       messages:[...(sys?[{role:'system',content:sys}]:[]),{role:'user',content:msg}]})});
-  const d=await r.json();
-  if(d.error){
-    // Se la chiave non è valida, la cancella e chiede di reinserirla
-    if(d.error.code==='invalid_api_key'||d.error.status===401){
-      localStorage.removeItem('ff_groq_key');GROQ_KEY='';
-      throw new Error('❌ Chiave API non valida — riprova, ti verrà chiesta di nuovo.');
-    }
-    throw new Error(d.error.message);
-  }
+  const d=await r.json();if(d.error)throw new Error(d.error.message);
   return d.choices?.[0]?.message?.content||'';
 }
 
@@ -561,23 +541,6 @@ function startNewSeason(){
 /* ═══════════════════════════════════════
    RENDER
 ═══════════════════════════════════════ */
-function cambiaGroqKey(){
-  const attuale=getGroqKey();
-  const msg=attuale
-    ?'🔑 Chiave API Groq attuale:\n'+attuale.slice(0,12)+'••••••••\n\nInserisci la nuova chiave (lascia vuoto per cancellare):'
-    :'🔑 Inserisci la tua Groq API Key:\n\nLa trovi su console.groq.com → API Keys\nViene salvata SOLO su questo dispositivo, non nel codice.';
-  const k=prompt(msg,'');
-  if(k===null)return; // annullato
-  if(k.trim()===''){
-    localStorage.removeItem('ff_groq_key');GROQ_KEY='';
-    alert('🗑️ Chiave API rimossa.');
-  }else{
-    setGroqKey(k);GROQ_KEY=k.trim();
-    alert('✅ Chiave API salvata!');
-  }
-  render();
-}
-
 function render(){document.getElementById('root').innerHTML=appShell();}
 
 function appShell(){
@@ -607,8 +570,6 @@ function appShell(){
     <div style="margin-top:auto;padding:0 8px 8px">
       <button onclick="S.showPinModal=true;render()" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid ${S.captainMode?'#fbbf24':'#374151'};background:transparent;color:${S.captainMode?'#fbbf24':'#6b7280'};font-size:12px;font-weight:600">
         ${S.captainMode?'👑 Modalità capitano':'🔐 Accedi come capitano'}</button>
-      <button onclick="cambiaGroqKey()" style="width:100%;margin-top:6px;padding:7px 12px;border-radius:8px;border:1px solid #374151;background:transparent;color:${getGroqKey()?'#4ade80':'#f87171'};font-size:11px;font-weight:600">
-        ${getGroqKey()?'🔑 API Key ✓':'⚠️ API Key mancante'}</button>
     </div>
   </aside>
   <div id="main">
@@ -628,6 +589,7 @@ function appShell(){
   </div>
   ${S.editP!==null?modalPlayer():''}
   ${S.editingMatch!==null?modalEditMatch():''}
+  ${S.editingScorers!==null?modalEditScorers():''}
   ${S.showPinModal?modalPin():''}
 </div>`;}
 
@@ -1495,6 +1457,7 @@ function pgGiornale(){
             ${m.mvpName?`<span style="font-size:10px;color:#E30613;margin-left:6px">⭐ ${m.mvpName}</span>`:''}</div>
           <span class="gz-head" style="font-size:18px;color:#1a1a1a;letter-spacing:3px">${m.scoreA} – ${m.scoreB}</span>
           ${S.captainMode?`<button onclick="openEditMatch('${m.id}')" style="background:none;border:none;color:#E30613;font-size:15px;cursor:pointer;padding:2px 3px">✏️</button>
+          <button onclick="openEditScorers('${m.id}')" style="background:none;border:none;color:#16a34a;font-size:15px;cursor:pointer;padding:2px 3px">⚽</button>
           <button onclick="deleteMatch('${m.id}')" style="background:none;border:none;color:#999;font-size:15px;cursor:pointer;padding:2px 3px">🗑️</button>`:''}
         </div>
         ${sc.length>0?`<div style="font-size:11px;color:#8b1a1a;margin-top:3px;font-weight:600">⚽ ${sc.join(' · ')}</div>`:''}
@@ -1600,6 +1563,83 @@ function deleteMatch(matchId){
         V:myS>oppS?Math.max(0,S.players[i].V-1):S.players[i].V,P:myS===oppS?Math.max(0,S.players[i].P-1):S.players[i].P,
         S:myS<oppS?Math.max(0,S.players[i].S-1):S.players[i].S,GF:Math.max(0,S.players[i].GF-gf),GS:Math.max(0,S.players[i].GS-gs)};});savePl();}
   S.matches=S.matches.filter(x=>x.id!==matchId);saveMs();render();
+}
+
+/* ═══════════════════════════════════════
+   MODIFICA MARCATORI — sezione isolata
+   Tocca SOLO ratings[pid].goals e GF
+   Non modifica V,P,S,G,GS né il punteggio
+═══════════════════════════════════════ */
+function openEditScorers(id){
+  S.editingScorers={...S.matches.find(x=>x.id===id)};
+  render();
+}
+function closeEditScorers(){S.editingScorers=null;render();}
+
+function saveEditedScorers(){
+  const m=S.matches.find(x=>x.id===S.editingScorers.id);
+  if(!m)return;
+  const conf=Object.entries(m.players||{}).filter(([,s])=>s==='confirmed').map(([id])=>id);
+  conf.forEach(pid=>{
+    const i=S.players.findIndex(p=>p.id===pid);if(i<0)return;
+    const oldGoals=m.ratings?.[pid]?.goals||0;
+    const inp=document.getElementById('sg-'+pid);
+    const newGoals=inp?Math.max(0,parseInt(inp.value)||0):oldGoals;
+    // Aggiorna solo GF del giocatore
+    S.players[i]={...S.players[i],GF:Math.max(0,S.players[i].GF-oldGoals+newGoals)};
+    // Aggiorna solo goals nel ratings della partita
+    if(!m.ratings)m.ratings={};
+    if(!m.ratings[pid])m.ratings[pid]={goals:0};
+    m.ratings[pid]={...m.ratings[pid],goals:newGoals};
+  });
+  S.matches=S.matches.map(x=>x.id===m.id?{...m}:x);
+  savePl();saveMs();
+  S.editingScorers=null;render();
+}
+
+function modalEditScorers(){
+  const m=S.editingScorers;
+  const conf=Object.entries(m.players||{}).filter(([,s])=>s==='confirmed').map(([id])=>id);
+  const confP=S.players.filter(p=>conf.includes(p.id));
+  return `<div class="ov" onclick="if(event.target===this)closeEditScorers()">
+  <div class="mod">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid #1f2937">
+      <span style="font-weight:700;font-size:16px">⚽ Marcatori — ${m.date}</span>
+      <button onclick="closeEditScorers()" style="background:none;border:none;color:#9ca3af;font-size:20px">✕</button>
+    </div>
+    <div style="padding:12px 16px;display:flex;flex-direction:column;gap:6px">
+      <div style="font-size:11px;color:#6b7280;margin-bottom:4px">Modifica i gol per ogni giocatore. Le statistiche GF vengono aggiornate automaticamente.</div>
+      ${ROLES.map(role=>{
+        const ps=confP.filter(p=>p.role===role);if(!ps.length)return'';
+        return `<div style="font-size:10px;color:#6b7280;letter-spacing:1px;margin-top:6px;margin-bottom:2px">${RICON[role]} ${role.toUpperCase()}</div>`+
+        ps.map(p=>{
+          const goals=m.ratings?.[p.id]?.goals||0;
+          const team=m.teamA?.includes(p.id)?'⚪':'⚫';
+          return `<div style="display:flex;align-items:center;gap:10px;padding:7px 10px;background:#111827;border-radius:8px;margin-bottom:3px">
+            <span style="font-size:16px">${RICON[p.role]}</span>
+            <div style="flex:1;min-width:0">
+              <span style="font-size:13px;font-weight:600">${p.name}</span>
+              <span style="font-size:11px;color:#6b7280;margin-left:6px">${team}</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+              <button onclick="const el=document.getElementById('sg-${p.id}');if(el&&parseInt(el.value)>0)el.value=parseInt(el.value)-1"
+                style="font-size:18px;background:none;border:none;color:#9ca3af;padding:2px 8px;cursor:pointer">−</button>
+              <input id="sg-${p.id}" type="number" min="0" inputmode="numeric" value="${goals}"
+                style="width:44px;text-align:center;font-size:18px;font-weight:700;background:#1f2937;border:1px solid #374151;border-radius:6px;color:#4ade80;padding:4px"/>
+              <button onclick="const el=document.getElementById('sg-${p.id}');if(el)el.value=parseInt(el.value||0)+1"
+                style="font-size:18px;background:none;border:none;color:#4ade80;padding:2px 8px;cursor:pointer">+</button>
+            </div>
+          </div>`;
+        }).join('');
+      }).join('')}
+      <div class="warn" style="font-size:11px;margin-top:8px">⚠️ Vengono aggiornati solo i gol (GF). Punteggio, vittorie e presenze restano invariati.</div>
+    </div>
+    <div style="display:flex;gap:8px;padding:0 16px 16px">
+      <button class="btn br bfw" onclick="closeEditScorers()">Annulla</button>
+      <button class="btn bg bfw" onclick="saveEditedScorers()">✓ Salva marcatori</button>
+    </div>
+  </div>
+</div>`;
 }
 
 function resetSeason(){
