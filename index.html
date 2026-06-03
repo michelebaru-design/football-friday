@@ -162,8 +162,10 @@ input[type=range]{accent-color:#16a34a;width:100%}
 <div id="root"></div>
 <script>
 /* ═══════════════════════════════════════
-   🔑 CHIAVI
+   🔑 CHIAVI — salvate in localStorage (non nel codice)
 ═══════════════════════════════════════ */
+function getGroqKey(){return localStorage.getItem('ff_groq_key')||'';}
+function setGroqKey(k){localStorage.setItem('ff_groq_key',k.trim());}
 let GROQ_KEY=getGroqKey(); // letta da localStorage — mai nel codice
 const CAPTAIN_PIN='123456';
 const BIANCHI='Bianchi',NERI='Neri';
@@ -360,12 +362,37 @@ async function cloudRefresh(){
    AI (GROQ)
 ═══════════════════════════════════════ */
 async function ai(msg,sys){
+  GROQ_KEY=getGroqKey(); // rilegge sempre da localStorage
+  if(!GROQ_KEY){
+    const k=prompt('🔑 Inserisci la tua Groq API Key\n(console.groq.com → API Keys)\n\nViene salvata solo su questo dispositivo:');
+    if(!k||!k.trim()){throw new Error('Chiave API non inserita');}
+    setGroqKey(k);GROQ_KEY=k.trim();
+  }
   const r=await fetch('https://api.groq.com/openai/v1/chat/completions',{method:'POST',
     headers:{'Content-Type':'application/json','Authorization':'Bearer '+GROQ_KEY},
     body:JSON.stringify({model:'llama-3.3-70b-versatile',max_tokens:1500,
       messages:[...(sys?[{role:'system',content:sys}]:[]),{role:'user',content:msg}]})});
-  const d=await r.json();if(d.error)throw new Error(d.error.message);
+  const d=await r.json();
+  if(d.error){
+    if(d.error.code==='invalid_api_key'||d.error.status===401){
+      localStorage.removeItem('ff_groq_key');GROQ_KEY='';
+      throw new Error('❌ Chiave API non valida — verrà richiesta di nuovo al prossimo utilizzo.');
+    }
+    throw new Error(d.error.message);
+  }
   return d.choices?.[0]?.message?.content||'';
+}
+
+function cambiaGroqKey(){
+  const attuale=getGroqKey();
+  const msg=attuale
+    ?'🔑 Chiave API Groq attuale:\n'+attuale.slice(0,12)+'••••••••\n\nNuova chiave (vuoto per cancellare):'
+    :'🔑 Inserisci la tua Groq API Key:\n(console.groq.com → API Keys)';
+  const k=prompt(msg,'');
+  if(k===null)return;
+  if(k.trim()===''){localStorage.removeItem('ff_groq_key');GROQ_KEY='';alert('🗑️ Chiave rimossa.');}
+  else{setGroqKey(k);GROQ_KEY=k.trim();alert('✅ Chiave salvata!');}
+  render();
 }
 
 /* ═══════════════════════════════════════
@@ -571,6 +598,8 @@ function appShell(){
     <div style="margin-top:auto;padding:0 8px 8px">
       <button onclick="S.showPinModal=true;render()" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid ${S.captainMode?'#fbbf24':'#374151'};background:transparent;color:${S.captainMode?'#fbbf24':'#6b7280'};font-size:12px;font-weight:600">
         ${S.captainMode?'👑 Modalità capitano':'🔐 Accedi come capitano'}</button>
+      <button onclick="cambiaGroqKey()" style="width:100%;margin-top:6px;padding:7px 12px;border-radius:8px;border:1px solid #374151;background:transparent;color:${getGroqKey()?'#4ade80':'#f87171'};font-size:11px;font-weight:600">
+        ${getGroqKey()?'🔑 API Key ✓':'⚠️ API Key mancante'}</button>
     </div>
   </aside>
   <div id="main">
