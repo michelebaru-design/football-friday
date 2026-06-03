@@ -307,6 +307,7 @@ let S={tab:'home',players:[],matches:[],match:null,
   editP:null,pRatings:{},pScore:{a:0,b:0},pMvp:'',
   loading:'',pFilter:'',swapSel:null,editTeams:false,
   editingMatch:null,editingScorers:null,captainMode:false,showPinModal:false,lastSync:null,
+  statsPlayer:null,
   myPlayerId:'',      /* id giocatore scelto dal membro per auto-convocazione */
   seasons:[],         /* stagioni archiviate */
   seasonName:'',      /* nome stagione corrente es. "2024-25" */
@@ -548,15 +549,15 @@ function appShell(){
     {id:'home',e:'🏠',l:'Home'},{id:'rosa',e:'👥',l:'Rosa'},{id:'nuovo',e:'➕',l:'Nuovo'},
     {id:'convoca',e:'📋',l:'Convoca'},{id:'partita',e:'⚽',l:'Partita'},
     {id:'stadio',e:'📺',l:'Stadio'},{id:'giornale',e:'📰',l:'Giornale'},
-    {id:'figurine',e:'🃏',l:'Card'}
+    {id:'figurine',e:'🃏',l:'Card'},{id:'gloria',e:'🏅',l:'Gloria'},{id:'stats',e:'📊',l:'Stats'}
   ];
   const viewTabs=[
     {id:'home',e:'🏠',l:'Home'},{id:'rosa',e:'👥',l:'Rosa'},
     {id:'stadio',e:'📺',l:'Stadio'},{id:'giornale',e:'📰',l:'Giornale'},
-    {id:'figurine',e:'🃏',l:'Card'}
+    {id:'figurine',e:'🃏',l:'Card'},{id:'gloria',e:'🏅',l:'Gloria'},{id:'stats',e:'📊',l:'Stats'}
   ];
   const tabs=S.captainMode?capTabs:viewTabs;
-  const pages={home:pgHome,rosa:pgRosa,nuovo:pgNuovo,convoca:pgConvoca,partita:pgPartita,stadio:pgStadio,giornale:pgGiornale,figurine:pgFigurine};
+  const pages={home:pgHome,rosa:pgRosa,nuovo:pgNuovo,convoca:pgConvoca,partita:pgPartita,stadio:pgStadio,giornale:pgGiornale,figurine:pgFigurine,gloria:pgGloria,stats:pgStats};
   const cc=S.match?Object.values(S.match.players).filter(x=>x==='confirmed').length:0;
   const syncBadge=S.lastSync?`<span id="sync-lbl" style="font-size:10px;color:#4ade80;margin-left:4px">📡 ${S.lastSync}</span>`:'';
   return `<div id="app">
@@ -594,7 +595,7 @@ function appShell(){
 </div>`;}
 
 function go(t){
-  const ok=S.captainMode?['home','rosa','nuovo','convoca','partita','stadio','giornale','figurine']:['home','rosa','stadio','giornale','figurine'];
+  const ok=S.captainMode?['home','rosa','nuovo','convoca','partita','stadio','giornale','figurine','gloria','stats']:['home','rosa','stadio','giornale','figurine','gloria','stats'];
   S.tab=ok.includes(t)?t:'home';S.editTeams=false;S.swapSel=null;render();
 }
 
@@ -1648,6 +1649,265 @@ function resetSeason(){
   S.players=S.players.map(p=>({...p,G:0,V:0,P:0,S:0,GF:0,GS:0}));
   S.matches=[];S.match=null;savePl();saveMs();saveCm();
   alert('✅ Nuova stagione iniziata!');render();
+}
+
+/* ═══════════════════════════════════════
+   HELPER STREAK — usato da Gloria e Stats
+═══════════════════════════════════════ */
+function playerMatchResults(playerId){
+  return S.matches.reduce((acc,m)=>{
+    const conf=Object.entries(m.players||{}).filter(([,s])=>s==='confirmed').map(([id])=>id);
+    if(!conf.includes(playerId))return acc;
+    const onA=m.teamA?.includes(playerId);
+    const myS=onA?(m.scoreA||0):(m.scoreB||0);
+    const oppS=onA?(m.scoreB||0):(m.scoreA||0);
+    acc.push(myS>oppS?'V':myS===oppS?'P':'S');
+    return acc;
+  },[]);
+}
+function currentStreak(results){
+  if(!results.length)return{type:null,count:0};
+  const type=results[0];let count=0;
+  for(const r of results){if(r===type)count++;else break;}
+  return{type,count};
+}
+
+/* ═══════════════════════════════════════
+   🏅 GLORIA / VERGOGNA
+═══════════════════════════════════════ */
+function pgGloria(){
+  if(!S.matches.length)return`<div style="max-width:640px;margin:0 auto;text-align:center;padding:4rem 1rem">
+    <div style="font-size:56px;margin-bottom:16px">🏅</div>
+    <div style="font-size:18px;font-weight:700;margin-bottom:8px">Nessun record ancora</div>
+    <div class="muted">I record appariranno dopo la prima partita salvata</div>
+  </div>`;
+
+  const gloria=[],vergogna=[],curiosita=[];
+
+  // Top scorer
+  const ts=[...S.players].sort((a,b)=>b.GF-a.GF)[0];
+  if(ts?.GF>0)gloria.push({e:'⚽',t:'<b>'+ts.name+'</b> è il capocannoniere con '+ts.GF+' gol stagionali'});
+
+  // Most appearances
+  const ta=[...S.players].sort((a,b)=>b.G-a.G)[0];
+  if(ta?.G>0)gloria.push({e:'📅',t:'<b>'+ta.name+'</b> è il più presente: '+ta.G+' partite'});
+
+  // Best media punti (min 5 partite)
+  const mp=[...S.players].filter(p=>p.G>=5).sort((a,b)=>calcMediaP(b)-calcMediaP(a))[0];
+  if(mp)gloria.push({e:'📊',t:'<b>'+mp.name+'</b> ha la miglior media punti: '+calcMediaP(mp).toFixed(3)});
+
+  // MVP più volte
+  const mvpCount={};
+  S.matches.forEach(m=>{if(m.mvp)mvpCount[m.mvp]=(mvpCount[m.mvp]||0)+1;});
+  const topMvp=Object.entries(mvpCount).sort((a,b)=>b[1]-a[1])[0];
+  if(topMvp&&topMvp[1]>=2){const p=S.players.find(x=>x.id===topMvp[0]);if(p)gloria.push({e:'⭐',t:'<b>'+p.name+'</b> è stato MVP '+topMvp[1]+' volte questa stagione'});}
+
+  // Record gol in una partita
+  let maxGM={player:null,goals:0,date:''};
+  S.matches.forEach(m=>{Object.entries(m.ratings||{}).forEach(([pid,r])=>{if((r.goals||0)>maxGM.goals){const p=S.players.find(x=>x.id===pid);if(p)maxGM={player:p,goals:r.goals,date:m.date};}});});
+  if(maxGM.goals>=3)gloria.push({e:'💥',t:'<b>'+maxGM.player.name+'</b> record: '+maxGM.goals+' gol in una sola partita ('+maxGM.date+')'});
+
+  // Streak vittorie / sconfitte / pareggi
+  S.players.forEach(p=>{
+    const res=playerMatchResults(p.id);
+    const str=currentStreak(res);
+    if(str.type==='V'&&str.count>=3)gloria.push({e:'🔥',t:'<b>'+p.name+'</b> imbattuto: '+str.count+' vittorie consecutive!'});
+    if(str.type==='S'&&str.count>=3)vergogna.push({e:'😅',t:'<b>'+p.name+'</b> non ne azzecca una: '+str.count+' sconfitte di fila'});
+    if(str.type==='P'&&str.count>=3)vergogna.push({e:'🤝',t:'<b>'+p.name+'</b> non vince mai: '+str.count+' pareggi consecutivi'});
+  });
+
+  // Portiere clean sheet streak
+  S.players.filter(p=>p.role==='Portiere').forEach(p=>{
+    let cs=0;
+    for(const m of S.matches){
+      const conf=Object.entries(m.players||{}).filter(([,s])=>s==='confirmed').map(([id])=>id);
+      if(!conf.includes(p.id))break;
+      const onA=m.teamA?.includes(p.id);
+      const oppS=onA?(m.scoreB||0):(m.scoreA||0);
+      if(oppS===0)cs++;else break;
+    }
+    if(cs>=2)gloria.push({e:'🧤',t:'<b>'+p.name+'</b> non subisce gol da '+cs+' partite consecutive'});
+  });
+
+  // Attaccanti/centrocampisti a secco
+  S.players.filter(p=>p.role==='Attaccante'||p.role==='Centrocampista').forEach(p=>{
+    let secco=0;
+    for(const m of S.matches){
+      const conf=Object.entries(m.players||{}).filter(([,s])=>s==='confirmed').map(([id])=>id);
+      if(!conf.includes(p.id))continue;
+      if((m.ratings?.[p.id]?.goals||0)>0)break;
+      secco++;
+    }
+    if(secco>=5)vergogna.push({e:'🥶',t:'<b>'+p.name+'</b> non segna da '+secco+' partite consecutive'});
+  });
+
+  // Partita più pazza
+  let crazy={total:0,date:'',sA:0,sB:0};
+  S.matches.forEach(m=>{const t=(m.scoreA||0)+(m.scoreB||0);if(t>crazy.total)crazy={total:t,date:m.date,sA:m.scoreA,sB:m.scoreB};});
+  if(crazy.total>=6)curiosita.push({e:'🎢',t:'Partita più pazza: '+crazy.sA+'–'+crazy.sB+' con '+crazy.total+' gol totali ('+crazy.date+')'});
+
+  // Vittoria più larga
+  let largo={diff:0,date:'',sA:0,sB:0};
+  S.matches.forEach(m=>{const d=Math.abs((m.scoreA||0)-(m.scoreB||0));if(d>largo.diff)largo={diff:d,date:m.date,sA:m.scoreA,sB:m.scoreB};});
+  if(largo.diff>=4)curiosita.push({e:'🏆',t:'Vittoria più larga: '+largo.sA+'–'+largo.sB+' ('+largo.date+')'});
+
+  // Partita con 0-0
+  const pariZero=S.matches.filter(m=>(m.scoreA||0)===0&&(m.scoreB||0)===0);
+  if(pariZero.length>0)curiosita.push({e:'💤',t:pariZero.length+' pareggi 0–0 questa stagione'});
+
+  function block(title,color,items){
+    if(!items.length)return'';
+    return`<div style="margin-bottom:20px">
+      <div style="font-family:-apple-system,sans-serif;font-size:13px;font-weight:800;letter-spacing:2px;color:${color};
+        border-bottom:3px solid ${color};padding-bottom:6px;margin-bottom:12px;text-transform:uppercase">${title}</div>
+      ${items.map(r=>`<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:#111827;
+        border-radius:10px;margin-bottom:6px;border-left:3px solid ${color}">
+        <span style="font-size:22px;flex-shrink:0">${r.e}</span>
+        <span style="font-size:14px;color:#d1d5db;line-height:1.5">${r.t}</span>
+      </div>`).join('')}
+    </div>`;
+  }
+
+  return`<div style="max-width:640px;margin:0 auto">
+    <div style="text-align:center;padding:1rem 0 1.2rem">
+      <div style="font-size:40px">🏅</div>
+      <div style="font-size:20px;font-weight:900;color:#fbbf24">MURO GLORIA & VERGOGNA</div>
+      <div style="font-size:11px;color:#6b7280;margin-top:4px">Stagione ${S.seasonName} · ${S.matches.length} partite</div>
+    </div>
+    ${!gloria.length&&!vergogna.length&&!curiosita.length
+      ?'<div class="muted" style="text-align:center;padding:2rem">Servono più partite per generare i record!</div>'
+      :block('🔥 Muro della Gloria','#16a34a',gloria)
+       +block('😅 Muro della Vergogna','#dc2626',vergogna)
+       +block('🎲 Curiosità','#f59e0b',curiosita)
+    }
+  </div>`;
+}
+
+/* ═══════════════════════════════════════
+   📊 STATS — profilo giocatore
+═══════════════════════════════════════ */
+function pgStats(){
+  const sel=S.statsPlayer;
+  const p=sel?S.players.find(x=>x.id===sel):null;
+  const RCOL={Portiere:'#60a5fa',Difensore:'#4ade80',Centrocampista:'#fbbf24',Attaccante:'#f87171'};
+
+  const list=`<div style="max-width:640px;margin:0 auto">
+    <div style="font-weight:700;font-size:16px;margin-bottom:12px">📊 Statistiche Giocatori</div>
+    <div style="font-size:12px;color:#6b7280;margin-bottom:12px">Tocca un giocatore per vedere il suo profilo</div>
+    ${ROLES.map(role=>{
+      const ps=S.players.filter(x=>x.role===role);if(!ps.length)return'';
+      return`<div style="font-size:10px;color:#6b7280;letter-spacing:1px;margin:8px 0 4px">${RICON[role]} ${role.toUpperCase()}</div>`+
+      ps.map(pl=>`<div onclick="S.statsPlayer='${pl.id}';render()"
+        style="background:#111827;border:1px solid #1f2937;border-radius:10px;padding:10px 12px;
+          display:flex;align-items:center;gap:10px;margin-bottom:4px;cursor:pointer">
+        <span style="font-size:20px">${RICON[pl.role]}</span>
+        <div style="flex:1">
+          <div style="font-weight:700;font-size:14px">${pl.name}</div>
+          <div style="font-size:11px;color:#6b7280">G:${pl.G} V:${pl.V} P:${pl.P} S:${pl.S} ⚽${pl.GF}</div>
+        </div>
+        <span style="color:#374151;font-size:18px">›</span>
+      </div>`).join('');
+    }).join('')}
+  </div>`;
+
+  if(!p)return list;
+
+  // Profilo giocatore
+  const col=RCOL[p.role]||'#9ca3af';
+  const res=playerMatchResults(p.id); // newest first
+  const last5=res.slice(0,5);
+  const mp=calcMediaP(p);
+  const str=currentStreak(res);
+  const streakLabel=str.type==='V'?'🔥 '+str.count+' vittorie di fila':str.type==='S'?'😅 '+str.count+' sconfitte di fila':str.type==='P'?'🤝 '+str.count+' pareggi di fila':'';
+
+  // Max values per barre proporzionali
+  const maxG=Math.max(...S.players.map(x=>x.G),1);
+  const maxV=Math.max(...S.players.map(x=>x.V),1);
+  const maxGF=Math.max(...S.players.map(x=>x.GF),1);
+  const maxMP=Math.max(...S.players.filter(x=>x.G>=5).map(x=>calcMediaP(x)),1);
+
+  function bar(label,val,maxVal,color){
+    const pct=maxVal>0?Math.round((val/maxVal)*100):0;
+    return`<div style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:3px">
+        <span style="font-size:12px;color:#9ca3af">${label}</span>
+        <span style="font-size:13px;font-weight:700;color:${color}">${val}</span>
+      </div>
+      <div style="background:#1f2937;border-radius:4px;height:10px;overflow:hidden">
+        <div style="width:${pct}%;background:${color};height:100%;border-radius:4px;transition:width .3s"></div>
+      </div>
+    </div>`;
+  }
+
+  const ph=playerPhoto(p.name);
+
+  return`<div style="max-width:640px;margin:0 auto">
+    <button onclick="S.statsPlayer=null;render()" style="background:none;border:none;color:#6b7280;font-size:13px;cursor:pointer;margin-bottom:12px;padding:0">‹ Tutti i giocatori</button>
+
+    <!-- Header profilo -->
+    <div style="background:linear-gradient(135deg,#052e16,#0a3d1a);border:1px solid #14532d;border-radius:16px;padding:16px;margin-bottom:12px;display:flex;gap:14px;align-items:center">
+      <div style="position:relative;flex-shrink:0">
+        <div style="width:64px;height:64px;border-radius:50%;background:${col}18;border:3px solid ${col};
+          display:flex;align-items:center;justify-content:center;font-size:28px;overflow:hidden">
+          <img src="${ph}" style="width:100%;height:100%;object-fit:cover;display:none"
+            onload="this.style.display='block';this.previousElementSibling&&(this.previousElementSibling.style.display='none')"
+            onerror="this.style.display='none'"/>
+          ${RICON[p.role]}
+        </div>
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:20px;font-weight:900;letter-spacing:1px">${p.name.toUpperCase()}</div>
+        <div style="font-size:11px;font-weight:700;color:${col};margin-top:2px">${p.role.toUpperCase()} · Lv.${'★'.repeat(p.level)+'☆'.repeat(5-p.level)}</div>
+        ${streakLabel?`<div style="font-size:12px;color:#fbbf24;margin-top:4px">${streakLabel}</div>`:''}
+      </div>
+      <div style="text-align:center;flex-shrink:0">
+        <div style="font-size:28px;font-weight:900;color:#fbbf24">${mp.toFixed(2)}</div>
+        <div style="font-size:9px;color:#6b7280;letter-spacing:1px">MEDIA</div>
+      </div>
+    </div>
+
+    <!-- Barre statistiche -->
+    <div class="card">
+      <div style="font-size:11px;font-weight:700;color:#9ca3af;letter-spacing:1px;margin-bottom:12px">STAGIONE ${S.seasonName}</div>
+      ${bar('📅 Presenze',p.G,maxG,'#60a5fa')}
+      ${bar('🏆 Vittorie',p.V,maxV,'#4ade80')}
+      ${bar('⚽ Gol',p.GF,maxGF,'#f59e0b')}
+      ${p.role==='Portiere'?bar('🧤 Gol Salvati',p.GS,Math.max(...S.players.map(x=>x.GS),1),'#a78bfa'):''}
+      ${p.G>=5?bar('📊 Media Punti',+mp.toFixed(3),+maxMP.toFixed(3),'#f87171'):''}
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:12px;padding-top:12px;border-top:1px solid #1f2937">
+        ${[['G',p.G,'Partite','#60a5fa'],['V',p.V,'Vittorie','#4ade80'],['P',p.P,'Pareggi','#9ca3af'],['S',p.S,'Sconfitte','#f87171']].map(([l,v,n,c])=>`
+          <div style="text-align:center;background:#0a0f1a;border-radius:8px;padding:8px 4px">
+            <div style="font-size:22px;font-weight:900;color:${c}">${v}</div>
+            <div style="font-size:9px;color:#6b7280;letter-spacing:.5px">${n.toUpperCase()}</div>
+          </div>`).join('')}
+      </div>
+    </div>
+
+    <!-- Ultimi 5 risultati -->
+    ${last5.length>0?`<div class="card">
+      <div style="font-size:11px;font-weight:700;color:#9ca3af;letter-spacing:1px;margin-bottom:10px">ULTIMI ${last5.length} RISULTATI</div>
+      <div style="display:flex;gap:8px">
+        ${last5.map(r=>{const c=r==='V'?'#16a34a':r==='P'?'#374151':'#dc2626';return`<div style="flex:1;text-align:center;padding:10px 4px;background:${c};border-radius:8px;font-size:16px;font-weight:900">${r}</div>`;}).join('')}
+      </div>
+    </div>`:''}
+
+    <!-- Gol per partita -->
+    ${(() => {
+      const gols=S.matches.filter(m=>{
+        const conf=Object.entries(m.players||{}).filter(([,s])=>s==='confirmed').map(([id])=>id);
+        return conf.includes(p.id)&&(m.ratings?.[p.id]?.goals||0)>0;
+      });
+      if(!gols.length)return'';
+      return`<div class="card">
+        <div style="font-size:11px;font-weight:700;color:#9ca3af;letter-spacing:1px;margin-bottom:10px">⚽ PARTITE CON GOL</div>
+        ${gols.slice(0,8).map(m=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #1f2937;font-size:13px">
+          <span style="color:#9ca3af">${m.date}</span>
+          <span style="font-size:11px">${m.scoreA}–${m.scoreB}</span>
+          <span style="font-weight:700;color:#f59e0b">⚽ ${'⚽'.repeat(m.ratings[p.id].goals)}</span>
+        </div>`).join('')}
+      </div>`;
+    })()}
+  </div>`;
 }
 
 /* ═══════════════════════════════════════
