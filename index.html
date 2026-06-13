@@ -1684,19 +1684,7 @@ function resetSeason(){
    HELPER STREAK — usato da Gloria e Stats
 ═══════════════════════════════════════ */
 function playerMatchResults(playerId){
-  function parseItDate(d){
-    if(!d)return 0;
-    const p=d.split(/[\/\s,:]+/);
-    if(p.length>=3)return new Date(p[2],p[1]-1,p[0]).getTime();
-    return 0;
-  }
-  // Ordina partite dalla più recente alla più vecchia
-  const sorted=[...S.matches].sort((a,b)=>{
-    const da=a.date?parseItDate(a.date):0;
-    const db=b.date?parseItDate(b.date):0;
-    return db-da;
-  });
-  return sorted.reduce((acc,m)=>{
+  return S.matches.reduce((acc,m)=>{
     const conf=Object.entries(m.players||{}).filter(([,s])=>s==='confirmed').map(([id])=>id);
     if(!conf.includes(playerId))return acc;
     const onA=m.teamA?.includes(playerId);
@@ -1927,9 +1915,8 @@ function pgStats(){
     <!-- Ultimi 5 risultati -->
     ${last5.length>0?`<div class="card">
       <div style="font-size:11px;font-weight:700;color:#9ca3af;letter-spacing:1px;margin-bottom:10px">ULTIMI ${last5.length} RISULTATI</div>
-      <div style="font-size:9px;color:#6b7280;letter-spacing:.5px;margin-bottom:6px;text-align:right">← più vecchio · più recente →</div>
       <div style="display:flex;gap:8px">
-        ${[...last5].reverse().map(r=>{const c=r==='V'?'#16a34a':r==='P'?'#374151':'#dc2626';return`<div style="flex:1;text-align:center;padding:10px 4px;background:${c};border-radius:8px;font-size:16px;font-weight:900">${r}</div>`;}).join('')}
+        ${last5.map(r=>{const c=r==='V'?'#16a34a':r==='P'?'#374151':'#dc2626';return`<div style="flex:1;text-align:center;padding:10px 4px;background:${c};border-radius:8px;font-size:16px;font-weight:900">${r}</div>`;}).join('')}
       </div>
     </div>`:''}
 
